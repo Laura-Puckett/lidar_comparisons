@@ -1,5 +1,6 @@
 #----------#
-Purpose: This workflow is intended for comparing gedi, icesat-2, or both against airborne lidar data for an area.
+Purpose: 
+This workflow is intended for comparing gedi, icesat-2, or both against airborne lidar data for an area.
 Because Icesat-2 and GEDI can't be compared directly against each other (due to mismatch in size/shape of footprints), 
 comparing them against airborne lidar separately is used here to infer how similar they are to each other.
 
