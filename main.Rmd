@@ -4,24 +4,40 @@ author: "Laura Puckett"
 date: "11/30/2021"
 output: html_document
 ---
-```{r, include=FALSE}
+```{r, echo = F}
 options(warn=-1)
+options(rgl.useNULL = TRUE) # Suppress the separate window.
+library(rgl)
+
 ```
 
-In this project, I created a workflow to compare GEDI and ICESat-2 against high-quality discrete-return LiDAR data for an area of interest. 
+```{css, echo=FALSE}
+p {
+font-size: 16px;
+}
+ul {
+font-size: 16px;
+}
+```
+
+<p>In this project, I created a workflow to compare GEDI and ICESat-2 against high-quality discrete-return LiDAR data for an area of interest. 
 
 The main steps are to:
-- download and subset ICESat-2 data for an area of interest
-- create spatial geometries from ICESat-2 and GEDI data csv files
-  - this involved creating different geometries for the two instruments, because they
-  have different pulse footprints
-- extract corresponding discrete-return data for each geometry and calculate
-height metrics
-- intersect geometries with forest group and forest cover layers and calculate summary values for each polygon
-- plot the results
 
-Code for the project is available [here]()
+<ul>
+<li>download and subset ICESat-2 data for an area of interest</li>
+<li>create spatial geometries from ICESat-2 and GEDI data csv files</li>
+<li>  this involved creating different geometries for the two instruments, because they
+have different pulse footprints</li>
+<li>extract corresponding discrete-return data for each geometry and calculate
+height metrics</li>
+<li>intersect geometries with forest group and forest cover layers and calculate summary values for each polygon</li>
+<li>plot the results</li>
+</ul>
 
+Code for the project is available in a [Github Repository](https://github.com/Laura-Puckett/lidar_comparisons)
+
+</p>
 <h2> Part 1. Download Data </h2>
 <p> In R, define the boundary. </p>
 ```{r, messages = F}
@@ -35,12 +51,14 @@ ymax=35.159778
 source('./write_boundary_shp.R')
 write_boundary_shp(xmin, xmax, ymin, ymax, './boundary/boundary.shp')
 ```
-<h4> Discrete-Return LiDAR Data </h4>
+<br>
+<h3> Discrete-Return LiDAR Data </h3>
 <p>Download 3DEP USGS Discrete-Return LiDAR Data within the area of interest using the USGS LidarExplorer: https://prd-tnm.s3.amazonaws.com/LidarExplorer/index.html#</p>
 
 <img src="./figures/download_data_from_USGS_lidar_explorer.png">
 
-<h4> GEDI </h4>
+<br>
+<h3> GEDI </h3>
 
 <p>Download GEDI Level 2A Version 2  Data from https://search.earthdata.nasa.gov/</p>
 <p> I uploaded the shapefile of the boundary area and found 9 GEDI granules that intersect the area of interest. The download urls are shown below. *Note, these files are large ~ 2 Gb each*. <br>
@@ -55,7 +73,8 @@ https://e4ftl01.cr.usgs.gov//GEDI_L1_L2/GEDI/GEDI02_A.002/2019.07.09/GEDI02_A_20
 https://e4ftl01.cr.usgs.gov//GEDI_L1_L2/GEDI/GEDI02_A.002/2019.04.23/GEDI02_A_2019113131121_O02045_02_T01195_02_003_01_V002.h5<br>
 </p>
 
-<h4> ICESat-2 </h4>
+<br>
+<h3> ICESat-2 </h3>
 <p> Download ICESat-2 L3A Land and Vegetaion Height, Version 5 data using the python download script, nsidc-download_ATL08.005_2021-12-01.py, that is automatically generated at https://nsidc.org/data/atl08 <br><br>
 In a terminal, run the following:</p>
 
@@ -64,7 +83,6 @@ py ./nsidc-download_ATL08.005_2021-12-01.py
 ```
 
 <h2> Part 2. Spatially Subset the Data </h2>
-
 <p> Spatially subset the GEDI data by cloning the GEDI-subsetter by Cole Krehbiel from https://git.earthdata.nasa.gov/projects/LPDUR/repos/gedi-subsetter/browse/GEDI_Subsetter.py
 
 <br> In a terminal, run the following: 
@@ -76,8 +94,9 @@ conda activate gedi
 python ./gedi-subsetter/GEDI_Subsetter.py --dir ./data/0_orig/gedi/ --roi 35.159778,-111.5872356,35.1363133,-111.538214 
 ```
 
+<p> **  Note: From this point on, all code is written for R.** </p>
+
 <p> Spatially subset the ICESat-2 data and convert from hdf to csv. </p>
-<p> *Note: From this point on, all code is written for R.* </p>
 
 
 ```{r, eval = F}
@@ -124,79 +143,7 @@ leaflet() %>%
 
 
 <h2> Part 4. Extract Discrete-Return Values for Satellite Footprints </h2>
-<p> In the following code, a function is defined to calculate relative height metrics from the intersecting part of the discrete-return point cloud for each satellite footprint and output the resulting data as a csv.</p>
-
-```{r extract_ALS_metrics, eval = F}
-#  Define function to calculate height metrics for aerial LiDAR Survey (ALS) data within geometries
-extract_ALS_metrics = function(sensor, geom_path, output_path, ALS_dir, ctg_path, proj){
-  # Author: Laura Puckett
-  # 08/26/2020
-  # Purpose: extract discrete-return Aerial LiDAR Survey (ALS) data within a given polygon, calculate relative height metrics, and output results as a csv file. 
-  
-  list.of.packages <- c("lidR","rgdal", "raster","dplyr", "sp")
-  
-  new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
-  if(length(new.packages)>0) install.packages(new.packages, repos='http://cloud.r-project.org')
-  
-  library(lidR); library(rgdal); library(raster); library(dplyr); library(sp)
-  
-  if(file.exists(ctg_path)){
-    ctg = readRDS(ctg_path)
-  }else{
-    ctg = readLAScatalog(ALS_dir)
-    saveRDS(object = ctg, file = ctg_path)
-  }
-  
-  geoms_WGS84 = rgdal::readOGR(geom_path)
-  geoms = spTransform(geoms_WGS84, proj)
-  data = NULL
-  
-  # clip point cloud to a buffered version of the geometry (keeping edges for ground surface interpolation)
-  for(i in 1:nrow(geoms@data)){
-    print(i)
-    geom = geoms[i,]
-    
-    las_bufferclip = lidR::clip_roi(las = ctg, geometry = rgeos::gBuffer(geom, 5, byid=T))
-    if(nrow(las_bufferclip@data)>0){
-      
-      # normalize point cloud to the ground
-      norm_las = normalize_height(las_bufferclip, knnidw())
-      
-      ## Summarize point cloud over entire geometry
-      norm_las_clip = clip_roi(norm_las, geom)
-      if(length(norm_las_clip@data$NumberOfReturns)>0){
-        # filter for unclassified or vegetation points
-        veg = filter_poi(norm_las_clip, Classification %in% c(1L, 3L, 4L, 5L))
-        # calculate metrics defined in myMetrics function
-        las_met = cloud_metrics(las = norm_las_clip,  func = myMetrics(Z)) 
-        geom_data = cbind(geom@data, as.data.frame(las_met))
-        
-        # can't rbind to NULL, so using this to initialize the dataframe
-        if(is.null(data)){
-          data = geom_data
-        }else{
-          data = rbind(data, geom_data)
-        }
-      }
-    }
-  }
-  write.csv(data, output_path)
-}
-
-myMetrics = function(z) {
-  metrics = list(
-    RH_100_ALS = quantile(z, probs = c(1.00)),
-    RH_99_ALS = quantile(z, probs = c(0.99)),
-    RH_98_ALS = quantile(z, probs = c(0.98)),
-    RH_95_ALS = quantile(z, probs = c(0.95)),
-    RH_75_ALS = quantile(z, probs = c(0.75)),
-    RH_50_ALS = quantile(z, probs = c(0.50)),
-    RH_25_ALS = quantile(z, probs = c(0.25)))
-  return(metrics)
-}
-```
-
-<p> Now, use the function to calculate relative height metrics from the ALS data overlapping each satellite footprint. </p>
+<p> In the following step, a function is used to calculate relative height metrics from the intersecting part of the discrete-return point cloud for each satellite footprint and output the resulting data as a csv.</p>
 ```{r, eval = F}
 extract_ALS_metrics(sensor = "icesat2", 
                     geom_path = "./data/1_subset/icesat2/icesat2.shp",
@@ -212,11 +159,26 @@ extract_ALS_metrics(sensor = "gedi",
                     ctg_path = './data/ctg.RDS',
                     proj = projection)
 ```
+<p> Below are visualizations of clipping the discrete-return point cloud to satellite sensor footprints. For each instruments, the point cloud is clipped to the shape of the footprint (100x14m rectangle for ICESat-2, 25m diameter circle for GEDI) The relative height metrics associated with each footprint are saved, and corresponding relative height metrics for the discrete-return data are calculated from the clipped point cloud.</p>
+
+<h4> Discrete-Return Point Cloud Clipped to an ICESat-2 Footprint</h4>
+```{r, webgl=TRUE, echo = F}
+veg_icesat2 = readRDS('./figures/veg_icesat2.RDS')
+lidR::plot(veg_icesat2, axis = T, bg = "white")
+rglwidget()
+```
+<h4> Discrete-Return Point Cloud Clipped to a GEDI Footprint </h4>
+
+```{r, webgl=TRUE, echo = F}
+veg_gedi = readRDS('./figures/veg_gedi.RDS')
+lidR::plot(veg_gedi, axis = T, bg = "white")
+rglwidget()
+```
 <h2> Part 5. Compare the Datasets </h2>
 
 ```{r, message=F}
-library(plotly); library(dplyr)
-
+library(dplyr, quietly = T)
+# Prepare ICESat-2 Data
 icesat = read.csv('./data/2_joined/icesat_ALS.csv') %>%
   dplyr::select(cn_h_25, cn_h_50, cn_h_75, cn_h_95,cn_max, 
                 RH_25_ALS, RH_50_ALS,RH_75_ALS, RH_95_ALS, RH_98_ALS, RH_100_ALS) %>%
@@ -227,7 +189,7 @@ icesat = read.csv('./data/2_joined/icesat_ALS.csv') %>%
          RH_75_sat = cn_h_75,
          RH_95_sat = cn_h_95,
          RH_100_sat = cn_max)
-
+# Prepare GEDI Data
 gedi = read.csv('./data/2_joined/gedi_ALS.csv') %>%
   dplyr::select(rh_25, rh_50, rh_75, rh_95, rh_100,
                 RH_25_ALS, RH_50_ALS,RH_75_ALS, RH_95_ALS, RH_98_ALS, RH_100_ALS) %>%
@@ -238,62 +200,100 @@ gedi = read.csv('./data/2_joined/gedi_ALS.csv') %>%
          RH_95_sat = rh_95,
          RH_100_sat = rh_100)
 
+# combine the datasets
 combined = rbind(icesat,gedi)
+```
 
+```{r, messages = F}
+library(plotly, quietly = T); 
 plot_ly() %>% 
   layout(title = "Comparison of Canopy Height Values [m] ",
-         yaxis=list(title='Satellite Data'),
-         xaxis = list(title = "3DEP Discrete-Return Data")) %>%
+         yaxis = list(title='Satellite Data',
+                      dtick = 10),
+         xaxis = list(title = "3DEP Discrete-Return Data",
+                      dtick = 10)) %>%
   add_trace(data = combined,
             name = ~sensor,
             type = "scatter",
             color = ~sensor,
+            alpha = 0.5,
             x = ~RH_98_ALS,
-            y = ~RH_100_sat)
+            y = ~RH_100_sat) %>%
+  add_trace(x = c(0:45),
+            y = c(0:45),
+            name = "1:1 line",
+            color = "red",
+            mode = "lines")
+
+```
+
+```{r, messages = F}
+library(tidyr, quietly = T)
+# reform data to have a column for RH percentile and a column for the height values
+by_RH = combined %>%
+  dplyr::select(-RH_98_ALS) %>%
+  mutate(id = row_number()) %>%
+  gather(key = "RH_num_type", value = "value", -sensor, -id) %>%
+  # pull out the numeric values
+  mutate(RH_num = substr(RH_num_type, 4, nchar(RH_num_type)-4)) %>%
+  # pull out "sat" or "ALS"
+  mutate(type = substr(RH_num_type, nchar(RH_num_type)-2, nchar(RH_num_type)),
+         # change "sat" to either ICESat-2 or GEDI
+         type = ifelse(type == "sat",sensor, type),
+         # change ALS to be more descriptive for figure legend
+         type = ifelse(type == "ALS", "3DEP Discrete-Return", type))
+
+# reorder the factors so it doesn't start with 100
+by_RH$RH_num = factor(by_RH$RH_num, levels = c("25","50","75","95","100"))
 ```
 
 ```{r}
-# reform data with a single column for RH 
-by_RH_GEDI = combined %>%
-  filter(sensor == "GEDI") %>%
-  gather(key = "RH_num_type", value = "value", -sensor) %>%
-  mutate(RH = substr(RH_num_type, "_")[2],
-         type = substr(RH_num_type, "_")[3])
+fig1 = plot_ly() %>% 
+  layout(title = "",
+         yaxis=list(title='Height [m]'),
+         xaxis = list(title = "Relative Height Percentile"),
+         legend = list(x = 0.05, y = 0.95)) %>%
+  add_boxplot(data = by_RH %>% filter(sensor == "GEDI"),
+              name = ~type,
+              legendgroup = 'a',
+              x = ~RH_num,
+              y = ~value,
+              color = ~type) %>%
+  layout(boxmode = "group")
 
-plot_ly() %>% 
-  layout(title = "Comparison of Canopy Height Values [m] ",
-         yaxis=list(title='Satellite Data'),
-         xaxis = list(title = "3DEP Discrete-Return Data")) %>%
-  add_trace(data = combined,
-            name = ~sensor,
-            type = "scatter",
-            color = ~sensor,
-            x = ~RH_98_ALS,
-            y = ~RH_100_sat)
+fig2 = plot_ly() %>% 
+  layout(title = "",
+         yaxis=list(title='Height [m]'),
+         xaxis = list(title = "Relative Height Percentile")) %>%
+  add_boxplot(data = by_RH %>% filter(sensor == "ICESat-2"),
+              name = ~type,
+              legendgroup = 'b',
+              x = ~RH_num,
+              y = ~value,
+              color = ~type,
+              colors = "Dark2") %>%
+  layout(boxmode = "group")
 
-```
-
-plot_ly() %>% 
-  layout(title = "Comparison of Relative Height Values [m] ",
-         yaxis=list(title='Satellite Data'),
-         xaxis = list(title = "3DEP Discrete-Return Data")) %>%
-  add_trace(data = combined,
-            name = ~sensor,
-            type = "scatter",
-            color = ~sensor,
-            x = ~RH_98_ALS,
-            y = ~RH_max_sat)
-
+fig <- subplot(fig1, fig2, nrows = 2, titleX = T, titleY = T, shareX = T, shareY = T) %>%
+  layout(title = list(text = "Height Values Comparison for Multiple Relative Height Percecntiles "),
+         yaxis=list(title='Height [m]'),
+         xaxis = list(title = "Relative Height Percentile"))
+fig
 
 ```
 <p> Overall, there is a clear relationship between values from the satellite instruments and
-high-quality 3DEP discrete-return LiDAR data. However, there are some outliers and more could be done to explore these relationships. Filtering for nighttime data, GEDI strong beams, and thresholds for the quality flags would yield the highest quality data for filtering. However, that may not leave us with much data in the small area used for this example. 
+high-quality 3DEP discrete-return LiDAR data. However, there are some outliers and more could be done to explore these relationships. Filtering for nighttime data, GEDI strong beams, and thresholds for the quality flags would yield the highest quality data for filtering. However, that may not leave us with much data in the small area used for this example.
+
+<br>
 
 Here is an example where those filters were used in an analysis done in 2020. The data is from a larger area near Lake Tahoe. The code for this project was slightly different because the project was set up to run on a high-performance computing cluster due to the large size of the datasets. That code is available on the "NAU" fork of the same repository. 
+
 </p>
 
+<img src="./figures/gedi_icesat2_als_comparison.png">
 
-```{r, include=FALSE}
+
+```{r, echo=FALSE}
 options(warn=0)
 ```
 
@@ -306,13 +306,14 @@ Dubayah, R., Tang, H., Armston, J., Luthcke, S., Hofton, M., Blair, J. (2020). <
 Neuenschwander, A. L., K. L. Pitts, B. P. Jelley, J. Robbins, B. Klotz, S. C. Popescu, R. F. Nelson, D. Harding, D. Pederson, and R. Sheridan. 2021. ATLAS/ICESat-2 L3A Land and Vegetation Height, Version 5. [Indicate subset used]. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. doi: https://doi.org/10.5067/ATLAS/ATL08.005. [2020-12-01].
 <br>
 
-AZ Coconino 2019 B19: Discrete-Return LiDAR Data downloaded from [USGS 3DEP LiDAR Explorer](https://prd-tnm.s3.amazonaws.com/LidarExplorer/index.html#/) [2020-11-30]
+AZ Coconino 2019 B19: Discrete-Return LiDAR Data downloaded from [USGS 3DEP LiDAR Explorer](https://prd-tnm.s3.amazonaws.com/LidarExplorer/index.html#/) [2020-11-30].
+
 <br>
 </p>
 
 <h2> Appendix </h2>
 
-<h5> write_boundary_shp Function </h5>
+<h5> write_boundary_shp function </h5>
 ```{r write_boundary_shp, eval = F}
 write_boundary_shp = function(xmin, xmax, ymin, ymax, filepath){
   # Author: Laura Puckett. 
@@ -433,7 +434,7 @@ hdf_to_csv = function(icesat_dir, output_path, ymax, xmin, ymin, xmax){
   write.csv(df, output_path)
 }
 ```
-<h5> csv_to_geometries Function </h5>
+<h5> csv_to_geometries function </h5>
 ```{r csv_to_geometries, eval = F}
 csv_to_geometries = function(csv_path, geometry_path, proj){
   # Author: Laura Puckett
@@ -540,7 +541,7 @@ csv_to_geometries = function(csv_path, geometry_path, proj){
 } 
 
 ```
-<h5> json_to_geometries Function </h5>
+<h5> json_to_geometries function </h5>
 ```{r json_to_geometries, eval = F}
 json_to_geometries = function(json_path, geometry_path, proj){
   # Author: Laura Puckett
@@ -565,5 +566,74 @@ json_to_geometries = function(json_path, geometry_path, proj){
     spTransform(sp::CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
   writeOGR(geoms, layer = "geometry", geometry_path, driver = "ESRI Shapefile", overwrite_layer = T)
 }
+```
+<h5> extract_ALS_metrics function </h5>
+```{r extract_ALS_metrics, eval = F}
+#  Define function to calculate height metrics for aerial LiDAR Survey (ALS) data within geometries
+extract_ALS_metrics = function(sensor, geom_path, output_path, ALS_dir, ctg_path, proj){
+  # Author: Laura Puckett
+  # 08/26/2020
+  # Purpose: extract discrete-return Aerial LiDAR Survey (ALS) data within a given polygon, calculate relative height metrics, and output results as a csv file. 
+  
+  list.of.packages <- c("lidR","rgdal", "raster","dplyr", "sp")
+  
+  new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+  if(length(new.packages)>0) install.packages(new.packages, repos='http://cloud.r-project.org')
+  
+  library(lidR); library(rgdal); library(raster); library(dplyr); library(sp)
+  
+  if(file.exists(ctg_path)){
+    ctg = readRDS(ctg_path)
+  }else{
+    ctg = readLAScatalog(ALS_dir)
+    saveRDS(object = ctg, file = ctg_path)
+  }
+  
+  geoms_WGS84 = rgdal::readOGR(geom_path)
+  geoms = spTransform(geoms_WGS84, proj)
+  data = NULL
+  
+  # clip point cloud to a buffered version of the geometry (keeping edges for ground surface interpolation)
+  for(i in 1:nrow(geoms@data)){
+    print(i)
+    geom = geoms[i,]
+    
+    las_bufferclip = lidR::clip_roi(las = ctg, geometry = rgeos::gBuffer(geom, 5, byid=T))
+    if(nrow(las_bufferclip@data)>0){
+      
+      # normalize point cloud to the ground
+      norm_las = normalize_height(las_bufferclip, knnidw())
+      
+      ## Summarize point cloud over entire geometry
+      norm_las_clip = clip_roi(norm_las, geom)
+      if(length(norm_las_clip@data$NumberOfReturns)>0){
+        # filter for unclassified or vegetation points
+        veg = filter_poi(norm_las_clip, Classification %in% c(1L, 3L, 4L, 5L))
+        # calculate metrics defined in myMetrics function
+        las_met = cloud_metrics(las = norm_las_clip,  func = myMetrics(Z)) 
+        geom_data = cbind(geom@data, as.data.frame(las_met))
+        
+        # can't rbind to NULL, so using this to initialize the dataframe
+        if(is.null(data)){
+          data = geom_data
+        }else{
+          data = rbind(data, geom_data)
+        }
+      }
+    }
+  }
+  write.csv(data, output_path)
+}
 
+myMetrics = function(z) {
+  metrics = list(
+    RH_100_ALS = quantile(z, probs = c(1.00)),
+    RH_99_ALS = quantile(z, probs = c(0.99)),
+    RH_98_ALS = quantile(z, probs = c(0.98)),
+    RH_95_ALS = quantile(z, probs = c(0.95)),
+    RH_75_ALS = quantile(z, probs = c(0.75)),
+    RH_50_ALS = quantile(z, probs = c(0.50)),
+    RH_25_ALS = quantile(z, probs = c(0.25)))
+  return(metrics)
+}
 ```
